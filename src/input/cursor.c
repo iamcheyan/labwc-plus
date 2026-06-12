@@ -1441,6 +1441,17 @@ handle_axis(struct wl_listener *listener, void *data)
 	idle_manager_notify_activity(seat->wlr_seat);
 	cursor_set_visible(seat, /* visible */ true);
 
+	/* Cycle mode: scroll wheel cycles through windows */
+	if (server.input_mode == LAB_INPUT_STATE_CYCLE) {
+		if (event->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL
+				&& event->delta != 0) {
+			cycle_step(event->delta < 0
+				? LAB_CYCLE_DIR_FORWARD
+				: LAB_CYCLE_DIR_BACKWARD);
+		}
+		return;
+	}
+
 	/* input->scroll_factor is set for pointer/touch devices */
 	assert(event->pointer->base.type == WLR_INPUT_DEVICE_POINTER
 		|| event->pointer->base.type == WLR_INPUT_DEVICE_TOUCH);
