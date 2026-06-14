@@ -20,6 +20,7 @@ enum input_mode {
 	LAB_INPUT_STATE_RESIZE,
 	LAB_INPUT_STATE_MENU,
 	LAB_INPUT_STATE_CYCLE, /* a.k.a. window switching */
+	LAB_INPUT_STATE_OVERVIEW,
 };
 
 struct seat {
@@ -96,6 +97,14 @@ struct seat {
 	struct overlay overlay;
 	/* Used to prevent region snapping when starting a move with A-Left */
 	bool region_prevent_snap;
+
+	/* Hot corner: cursor in screen corner triggers an action after delay */
+	struct {
+		bool armed;           /* cursor is in the hot zone */
+		bool triggered;       /* action already fired for this stay */
+		int corner;           /* which corner: 0=TL, 1=TR, 2=BL, 3=BR */
+		struct wl_event_source *timer;
+	} hot_corner;
 
 	struct wl_list inputs;
 	struct wl_listener new_input;

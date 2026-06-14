@@ -623,15 +623,118 @@ cursor_get_resize_edges(struct wlr_cursor *cursor, const struct cursor_context *
 	return resize_edges;
 }
 
+
+/* ── hot corner ────────────────────────────────────────── */
+
+static int
+hot_corner_timer_cb(void *data)
+{
+	struct seat *seat = data;
+	seat->hot_corner.timer = NULL;
+
+	if (!rc.hot_corner.enabled || seat->hot_corner.triggered) {
+		return 0;
+	}
+	if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH) {
+		return 0;
+	}
+
+	seat->hot_corner.triggered = true;
+
+	int corner = seat->hot_corner.corner;
+	struct wl_list *actions = &rc.hot_corner.corners[corner].actions;
+	if (!wl_list_empty(actions)) {
+		actions_run(NULL, actions, NULL);
+	}
+	return 0;
+}
+
+static void
+hot_corner_update(struct seat *seat)
+{
+	if (!rc.hot_corner.enabled) {
+		return;
+	}
+	if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH) {
+		return;
+	}
+
+	struct output *output = output_nearest_to_cursor();
+	if (!output || !output_is_usable(output)) {
+		return;
+	}
+
+	struct wlr_box output_box;
+	wlr_output_layout_get_box(server.output_layout,
+		output->wlr_output, &output_box);
+
+	double cx = seat->cursor->x;
+	double cy = seat->cursor->y;
+
+	/* check enabled corners (2x2 pixels) */
+	int hit = -1;
+	if (rc.hot_corner.corners[0].enabled
+			&& cx >= output_box.x && cx < output_box.x + 2
+			&& cy >= output_box.y && cy < output_box.y + 2) {
+		hit = 0;
+	} else if (rc.hot_corner.corners[1].enabled
+			&& cx >= output_box.x + output_box.width - 2
+			&& cx < output_box.x + output_box.width
+			&& cy >= output_box.y && cy < output_box.y + 2) {
+		hit = 1;
+	} else if (rc.hot_corner.corners[2].enabled
+			&& cx >= output_box.x && cx < output_box.x + 2
+			&& cy >= output_box.y + output_box.height - 2
+			&& cy < output_box.y + output_box.height) {
+		hit = 2;
+	} else if (rc.hot_corner.corners[3].enabled
+			&& cx >= output_box.x + output_box.width - 2
+			&& cx < output_box.x + output_box.width
+			&& cy >= output_box.y + output_box.height - 2
+			&& cy < output_box.y + output_box.height) {
+		hit = 3;
+	}
+
+	bool in_corner = (hit >= 0);
+
+	if (in_corner) {
+		if (!seat->hot_corner.armed) {
+			/* just entered the corner */
+			seat->hot_corner.armed = true;
+			seat->hot_corner.triggered = false;
+			seat->hot_corner.corner = hit;
+		}
+		if (!seat->hot_corner.triggered && !seat->hot_corner.timer) {
+			seat->hot_corner.timer = wl_event_loop_add_timer(
+				server.wl_event_loop,
+				hot_corner_timer_cb, seat);
+			wl_event_source_timer_update(seat->hot_corner.timer,
+				rc.hot_corner.delay_ms);
+		}
+	} else {
+		/* left the corner — cancel */
+		seat->hot_corner.armed = false;
+		seat->hot_corner.triggered = false;
+		if (seat->hot_corner.timer) {
+			wl_event_source_remove(seat->hot_corner.timer);
+			seat->hot_corner.timer = NULL;
+		}
+	}
+}
+
 bool
 cursor_process_motion(uint32_t time, double *sx, double *sy)
 {
+	hot_corner_update(&server.seat);
+
 	/* If the mode is non-passthrough, delegate to those functions. */
 	if (server.input_mode == LAB_INPUT_STATE_MOVE) {
 		process_cursor_move(time);
 		return false;
 	} else if (server.input_mode == LAB_INPUT_STATE_RESIZE) {
 		process_cursor_resize(time);
+		return false;
+	} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
 		return false;
 	}
 
