@@ -20,6 +20,7 @@
 #include "config/rcxml.h"
 #include "cycle.h"
 #include "debug.h"
+#include "overview.h"
 #include "input/keyboard.h"
 #include "input/key-state.h"
 #include "labwc.h"
@@ -137,6 +138,8 @@ struct action_arg_list {
 	X(ZOOM_IN, "ZoomIn") \
 	X(ZOOM_OUT, "ZoomOut") \
 	X(TOGGLE_SHOW_DESKTOP, "ToggleShowDesktop") \
+	X(TOGGLE_WORKSPACE_OVERVIEW, "ToggleWorkspaceOverview") \
+	X(SHOW_WORKSPACE_OVERVIEW, "ShowWorkspaceOverview") \
 	X(WARP_CURSOR, "WarpCursor") \
 	X(HIDE_CURSOR, "HideCursor") \
 	X(DEBUG_TOGGLE_KEY_STATE_INDICATOR, "DebugToggleKeyStateIndicator")
@@ -1585,6 +1588,18 @@ run_action(struct view *view, struct action *action,
 		break;
 	case ACTION_TYPE_TOGGLE_SHOW_DESKTOP:
 		show_desktop_toggle();
+		break;
+	case ACTION_TYPE_TOGGLE_WORKSPACE_OVERVIEW:
+		if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+			overview_hide();
+		} else if (server.input_mode == LAB_INPUT_STATE_PASSTHROUGH) {
+			overview_show();
+		}
+		break;
+	case ACTION_TYPE_SHOW_WORKSPACE_OVERVIEW:
+		if (server.input_mode == LAB_INPUT_STATE_PASSTHROUGH) {
+			overview_show();
+		}
 		break;
 	case ACTION_TYPE_WARP_CURSOR: {
 		const char *to = action_get_str(action, "to", "output");
