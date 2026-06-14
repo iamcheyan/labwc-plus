@@ -702,6 +702,9 @@ seat_finish(void)
 		input_device_destroy(&input->destroy, NULL);
 	}
 
+	if (seat->hot_corner.timer) {
+		wl_event_source_remove(seat->hot_corner.timer);
+	}
 	if (seat->workspace_osd_timer) {
 		wl_event_source_remove(seat->workspace_osd_timer);
 		seat->workspace_osd_timer = NULL;
