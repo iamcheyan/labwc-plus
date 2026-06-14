@@ -628,6 +628,15 @@ theme_builtin(struct theme *theme)
 	theme->osd_workspace_switcher_boxes_height = 20;
 	theme->osd_workspace_switcher_boxes_border_width = 2;
 
+	/* Overview defaults */
+	theme->overview.bg_color[0] = 0.12f; theme->overview.bg_color[1] = 0.12f; theme->overview.bg_color[2] = 0.14f; theme->overview.bg_color[3] = 0.92f;
+	theme->overview.workspace_bg_color[0] = 0.18f; theme->overview.workspace_bg_color[1] = 0.18f; theme->overview.workspace_bg_color[2] = 0.22f; theme->overview.workspace_bg_color[3] = 1.0f;
+	theme->overview.workspace_border_color[0] = 0.35f; theme->overview.workspace_border_color[1] = 0.35f; theme->overview.workspace_border_color[2] = 0.45f; theme->overview.workspace_border_color[3] = 1.0f;
+	theme->overview.workspace_hover_color[0] = 0.28f; theme->overview.workspace_hover_color[1] = 0.35f; theme->overview.workspace_hover_color[2] = 0.55f; theme->overview.workspace_hover_color[3] = 1.0f;
+	theme->overview.workspace_active_color[0] = 0.30f; theme->overview.workspace_active_color[1] = 0.55f; theme->overview.workspace_active_color[2] = 0.85f; theme->overview.workspace_active_color[3] = 1.0f;
+	theme->overview.window_bg_color[0] = 0.22f; theme->overview.window_bg_color[1] = 0.22f; theme->overview.window_bg_color[2] = 0.28f; theme->overview.window_bg_color[3] = 1.0f;
+	theme->overview.text_color[0] = 0.90f; theme->overview.text_color[1] = 0.90f; theme->overview.text_color[2] = 0.92f; theme->overview.text_color[3] = 1.0f;
+
 	/* inherit settings in post_processing() if not set elsewhere */
 	theme->osd_bg_color[0] = FLT_MIN;
 	theme->osd_border_width = INT_MIN;
@@ -1074,6 +1083,28 @@ entry(struct theme *theme, const char *key, const char *value)
 	}
 	if (match_glob(key, "osd.label.text.color")) {
 		parse_color(value, theme->osd_label_text_color);
+	}
+
+	if (match_glob(key, "overview.bg.color")) {
+		parse_color(value, theme->overview.bg_color);
+	}
+	if (match_glob(key, "overview.workspace.bg.color")) {
+		parse_color(value, theme->overview.workspace_bg_color);
+	}
+	if (match_glob(key, "overview.workspace.border.color")) {
+		parse_color(value, theme->overview.workspace_border_color);
+	}
+	if (match_glob(key, "overview.workspace.hover.color")) {
+		parse_color(value, theme->overview.workspace_hover_color);
+	}
+	if (match_glob(key, "overview.workspace.active.color")) {
+		parse_color(value, theme->overview.workspace_active_color);
+	}
+	if (match_glob(key, "overview.window.bg.color")) {
+		parse_color(value, theme->overview.window_bg_color);
+	}
+	if (match_glob(key, "overview.text.color")) {
+		parse_color(value, theme->overview.text_color);
 	}
 	if (match_glob(key, "snapping.overlay.region.bg.enabled")) {
 		set_bool(value, &theme->snapping_overlay_region.bg_enabled);
