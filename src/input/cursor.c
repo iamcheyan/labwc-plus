@@ -32,6 +32,8 @@
 #include "layers.h"
 #include "menu/menu.h"
 #include "output.h"
+#include "workspaces.h"
+#include <wlr/types/wlr_keyboard.h>
 #include "resistance.h"
 #include "resize-outlines.h"
 #include "ssd.h"
@@ -1479,6 +1481,29 @@ process_cursor_axis(enum wl_pointer_axis orientation,
 	enum direction direction = LAB_DIRECTION_INVALID;
 	struct scroll_info info = compare_delta(delta, delta_discrete,
 		&server.seat.accumulated_scrolls[orientation]);
+
+
+	if (rc.win_scroll_workspace && (modifiers == rc.win_scroll_workspace_modifier)) {
+		if (info.direction < 0) {
+			if (info.run_action) {
+				struct workspace *target = workspaces_find(
+					server.workspaces.current, "left", true);
+				if (target) {
+					workspaces_switch_to_without_osd(target, true);
+				}
+			}
+			return true;
+		} else if (info.direction > 0) {
+			if (info.run_action) {
+				struct workspace *target = workspaces_find(
+					server.workspaces.current, "right", true);
+				if (target) {
+					workspaces_switch_to_without_osd(target, true);
+				}
+			}
+			return true;
+		}
+	}
 
 	if (orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
 		if (info.direction < 0) {

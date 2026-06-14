@@ -500,6 +500,59 @@ workspaces_switch_to(struct workspace *target, bool update_focus)
 	show_desktop_reset();
 }
 
+
+void
+workspaces_switch_to_without_osd(struct workspace *target, bool update_focus)
+{
+	assert(target);
+	if (target == server.workspaces.current) {
+		return;
+	}
+
+	/* Disable the old workspace */
+	wlr_scene_node_set_enabled(
+		&server.workspaces.current->tree->node, false);
+
+	wlr_ext_workspace_handle_v1_set_active(
+		server.workspaces.current->ext_workspace, false);
+
+	struct view *view;
+	wl_list_for_each_reverse(view, &server.views, link) {
+		if (view->visible_on_all_workspaces) {
+			view_move_to_workspace(view, target);
+		}
+	}
+
+	/* Enable the new workspace */
+	wlr_scene_node_set_enabled(&target->tree->node, true);
+
+	/* Save the last visited workspace */
+	server.workspaces.last = server.workspaces.current;
+
+	/* Make sure new views will spawn on the new workspace */
+	server.workspaces.current = target;
+
+	struct view *grabbed_view = server.grabbed_view;
+	if (grabbed_view) {
+		view_move_to_workspace(grabbed_view, target);
+	}
+
+	if (update_focus) {
+		struct view *active_view = server.active_view;
+		if (!(active_view && active_view->visible_on_all_workspaces)) {
+			desktop_focus_topmost_view();
+		}
+	}
+
+	cursor_update_focus();
+
+	desktop_update_top_layer_visibility();
+
+	wlr_ext_workspace_handle_v1_set_active(target->ext_workspace, true);
+
+	show_desktop_reset();
+}
+
 void
 workspaces_osd_hide(struct seat *seat)
 {

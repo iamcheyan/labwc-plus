@@ -137,6 +137,8 @@ struct rcxml {
 	/* mouse */
 	long doubleclick_time;     /* in ms */
 	struct wl_list mousebinds; /* struct mousebind.link */
+	bool win_scroll_workspace;
+	uint32_t win_scroll_workspace_modifier;
 
 	/* touch tablet */
 	struct wl_list touch_configs;

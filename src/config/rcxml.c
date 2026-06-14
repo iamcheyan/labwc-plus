@@ -24,6 +24,7 @@
 #include "common/xml.h"
 #include "config/default-bindings.h"
 #include "config/keybind.h"
+#include <wlr/types/wlr_keyboard.h>
 #include "config/libinput.h"
 #include "config/mousebind.h"
 #include "config/tablet.h"
@@ -1258,6 +1259,19 @@ entry(xmlNode *node, char *nodename, char *content)
 		} else {
 			wlr_log(WLR_ERROR, "invalid doubleClickTime");
 		}
+	} else if (!strcasecmp(nodename, "winScrollWorkspace.mouse")) {
+		set_bool(content, &rc.win_scroll_workspace);
+	} else if (!strcasecmp(nodename, "winScrollWorkspaceModifier.mouse")) {
+		if (!strcasecmp(content, "none")) {
+			rc.win_scroll_workspace_modifier = 0;
+		} else {
+			uint32_t mod = parse_modifier(content);
+			if (mod != 0) {
+				rc.win_scroll_workspace_modifier = mod;
+			} else {
+				wlr_log(WLR_ERROR, "invalid winScrollWorkspaceModifier: %s", content);
+			}
+		}
 	} else if (!strcasecmp(nodename, "scrollFactor.mouse")) {
 		/* This is deprecated. Show an error message in post_processing() */
 		set_double(content, &mouse_scroll_factor);
@@ -1590,6 +1604,8 @@ rcxml_init(void)
 	rc.raise_on_focus_delay_ms = 0;
 
 	rc.doubleclick_time = 500;
+	rc.win_scroll_workspace = true;
+	rc.win_scroll_workspace_modifier = WLR_MODIFIER_LOGO;
 
 	rc.tablet.force_mouse_emulation = false;
 	rc.tablet.output_name = NULL;
