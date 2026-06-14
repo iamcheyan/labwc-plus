@@ -930,7 +930,9 @@ seat_focus_override_begin(struct seat *seat, enum input_mode input_mode,
 
 	seat_focus(seat, NULL, /*replace_exclusive_layer*/ false,
 		/*is_lock_surface*/ false);
-	wlr_seat_pointer_clear_focus(seat->wlr_seat);
+	if (!seat->pressed.ctx.surface) {
+		wlr_seat_pointer_clear_focus(seat->wlr_seat);
+	}
 	cursor_set(seat, cursor_shape);
 }
 
