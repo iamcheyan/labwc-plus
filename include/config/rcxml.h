@@ -214,6 +214,16 @@ struct rcxml {
 	unsigned int menu_ignore_button_release_period;
 	bool menu_show_icons;
 
+	/* Hot Corner */
+	struct {
+		bool enabled;
+		int delay_ms;
+		struct {
+			bool enabled;
+			struct wl_list actions; /* struct action.link */
+		} corners[4]; /* 0=TL, 1=TR, 2=BL, 3=BR */
+	} hot_corner;
+
 	/* Magnifier */
 	int mag_width;
 	int mag_height;
