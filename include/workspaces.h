@@ -22,6 +22,7 @@ struct workspace {
 
 void workspaces_init(void);
 void workspaces_switch_to(struct workspace *target, bool update_focus);
+void workspaces_switch_to_without_osd(struct workspace *target, bool update_focus);
 void workspaces_destroy(void);
 void workspaces_osd_hide(struct seat *seat);
 struct workspace *workspaces_find(struct workspace *anchor, const char *name,
