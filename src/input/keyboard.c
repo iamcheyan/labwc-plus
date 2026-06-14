@@ -17,6 +17,7 @@
 #include "input/key-state.h"
 #include "labwc.h"
 #include "menu/menu.h"
+#include "overview.h"
 #include "session-lock.h"
 #include "view.h"
 #include "workspaces.h"
@@ -538,6 +539,16 @@ handle_compositor_keybindings(struct keyboard *keyboard,
 			key_state_store_pressed_key_as_bound(event->keycode);
 			handle_menu_keys(&keyinfo.translated);
 			return LAB_KEY_HANDLED_TRUE;
+		} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+			/* Escape closes the overview */
+			for (int i = 0; i < keyinfo.translated.nr_syms; i++) {
+				if (keyinfo.translated.syms[i] == XKB_KEY_Escape) {
+					key_state_store_pressed_key_as_bound(
+						event->keycode);
+					overview_hide();
+					return LAB_KEY_HANDLED_TRUE;
+				}
+			}
 		} else if (server.input_mode == LAB_INPUT_STATE_CYCLE) {
 			if (handle_cycle_view_key(&keyinfo)) {
 				key_state_store_pressed_key_as_bound(event->keycode);

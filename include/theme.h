@@ -208,6 +208,18 @@ struct theme {
 	struct theme_snapping_overlay
 		snapping_overlay_region, snapping_overlay_edge;
 
+
+	/* overview */
+	struct {
+		float bg_color[4];
+		float workspace_bg_color[4];
+		float workspace_border_color[4];
+		float workspace_hover_color[4];
+		float workspace_active_color[4];
+		float window_bg_color[4];
+		float text_color[4];
+	} overview;
+
 	/* magnifier */
 	float mag_border_color[4];
 	int mag_border_width;

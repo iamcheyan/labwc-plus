@@ -31,6 +31,7 @@
 #include "labwc.h"
 #include "layers.h"
 #include "menu/menu.h"
+#include "overview.h"
 #include "output.h"
 #include "workspaces.h"
 #include <wlr/types/wlr_keyboard.h>
@@ -737,6 +738,8 @@ cursor_process_motion(uint32_t time, double *sx, double *sy)
 		process_cursor_resize(time);
 		return false;
 	} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+		overview_on_cursor_motion(server.seat.cursor->x,
+			server.seat.cursor->y);
 		return false;
 	}
 
@@ -1265,6 +1268,12 @@ cursor_process_button_press(struct seat *seat, uint32_t button, uint32_t time_ms
 		return false;
 	}
 
+	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+		overview_on_cursor_press(&ctx);
+		lab_set_add(&seat->bound_buttons, button);
+		return false;
+	}
+
 	/*
 	 * On press, set focus to a non-view surface that wants it.
 	 * Action processing does not run for these surfaces and thus
@@ -1371,6 +1380,10 @@ cursor_finish_button_release(struct seat *seat, uint32_t button)
 	}
 
 	lab_set_remove(&seat->bound_buttons, button);
+
+	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
+		wlr_seat_pointer_clear_focus(seat->wlr_seat);
+	}
 
 	if (server.input_mode == LAB_INPUT_STATE_MOVE
 			|| server.input_mode == LAB_INPUT_STATE_RESIZE) {
