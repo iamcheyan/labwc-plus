@@ -1,4 +1,18 @@
-# labwc
+# labwc-plus
+
+labwc-plus is an unofficial downstream fork of
+[labwc](https://github.com/labwc/labwc). It tracks upstream labwc while
+maintaining additional desktop features, including hot corners, a workspace
+overview, mouse-wheel workspace switching, and mouse-wheel window cycling.
+
+See [LABWC-PLUS.md](LABWC-PLUS.md) for the feature list, configuration
+examples, upstream relationship, and support policy.
+
+Please report labwc-plus issues to the
+[labwc-plus issue tracker](https://github.com/iamcheyan/labwc-plus/issues).
+For the original project, see [labwc/labwc](https://github.com/labwc/labwc).
+
+The remainder of this README contains the upstream labwc documentation.
 
 <h3 align="center">[<a
 href="https://labwc.github.io/">Website</a>] [<a
