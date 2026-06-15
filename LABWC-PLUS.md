@@ -125,3 +125,27 @@ otherwise. Features specific to labwc-plus may change as upstream evolves.
 For upstream labwc bugs that can also be reproduced without the labwc-plus
 changes, report them to the upstream project. For regressions or behavior
 specific to the features above, report them to labwc-plus.
+
+## Updating From Upstream
+
+The maintenance script fetches upstream labwc, rebases the labwc-plus commits,
+checks the resulting patch, and builds it:
+
+```sh
+scripts/update-upstream.sh
+```
+
+After manually testing the result, publish it with:
+
+```sh
+git push --force-with-lease origin master
+```
+
+To push automatically after a successful build:
+
+```sh
+scripts/update-upstream.sh --push
+```
+
+If Git finds a conflict, the script stops without pushing and prints the
+commands needed to resolve or abort the rebase.
