@@ -1599,9 +1599,11 @@ view_move_to_workspace(struct view *view, struct workspace *workspace)
 	assert(workspace);
 	if (view->workspace != workspace) {
 		view->workspace = workspace;
-		wlr_scene_node_reparent(&view->scene_tree->node,
-			workspace->view_trees[view->layer]);
-		view_update_visibility(view);
+		if (view->scene_tree) {
+			wlr_scene_node_reparent(&view->scene_tree->node,
+				workspace->view_trees[view->layer]);
+			view_update_visibility(view);
+		}
 	}
 }
 
