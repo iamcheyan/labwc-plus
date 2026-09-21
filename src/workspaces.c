@@ -5,9 +5,13 @@
 #include <cairo.h>
 #include <pango/pangocairo.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <wlr/types/wlr_ext_workspace_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
@@ -26,6 +30,47 @@
 #include "view.h"
 
 #define EXT_WORKSPACES_VERSION 1
+
+static void
+write_workspace_indicator_state(struct output *output)
+{
+	if (!output || !output->wlr_output || !output->current_workspace) {
+		return;
+	}
+
+	const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+	if (!runtime_dir || !*runtime_dir) {
+		return;
+	}
+
+	char state_dir[PATH_MAX];
+	if (snprintf(state_dir, sizeof(state_dir), "%s/labwc", runtime_dir)
+		>= (int)sizeof(state_dir)) {
+		return;
+	}
+	if (mkdir(state_dir, 0700) < 0 && errno != EEXIST) {
+		return;
+	}
+
+	char state_path[PATH_MAX];
+	char temp_path[PATH_MAX];
+	const char *output_name = output->wlr_output->name;
+	if (snprintf(state_path, sizeof(state_path), "%s/workspace-%s",
+		state_dir, output_name) >= (int)sizeof(state_path) ||
+		snprintf(temp_path, sizeof(temp_path), "%s.tmp.%ld", state_path,
+		(long)getpid()) >= (int)sizeof(temp_path)) {
+		return;
+	}
+
+	FILE *file = fopen(temp_path, "w");
+	if (!file) {
+		return;
+	}
+	fprintf(file, "%s %zu\n", output->current_workspace->name,
+		(size_t)wl_list_length(&server.workspaces.all));
+	fclose(file);
+	rename(temp_path, state_path);
+}
 
 /* Internal helpers */
 static size_t
@@ -438,6 +483,7 @@ workspaces_output_init(struct output *output)
 	assert(output);
 	output->current_workspace = server.workspaces.current;
 	output->last_workspace = output->current_workspace;
+	write_workspace_indicator_state(output);
 }
 
 struct output *
@@ -499,6 +545,7 @@ workspaces_switch_to_on_output(struct output *output,
 
 	output->last_workspace = current;
 	output->current_workspace = target;
+	write_workspace_indicator_state(output);
 	/* Keep the legacy global pointers aligned with the focused output. */
 	server.workspaces.last = current;
 	server.workspaces.current = target;
