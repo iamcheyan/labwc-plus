@@ -452,7 +452,7 @@ view_discover_output(struct view *view, struct wlr_box *geometry)
 			geometry->y + geometry->height / 2);
 
 	if (output && output != view->output) {
-		view->output = output;
+		view_set_output(view, output);
 		return true;
 	}
 
@@ -491,7 +491,13 @@ view_set_output(struct view *view, struct output *output)
 		wlr_log(WLR_ERROR, "invalid output set for view");
 		return;
 	}
-	view->output = output;
+	if (view->output != output) {
+		view->output = output;
+		struct workspace *target_ws = workspaces_current_for_output(output);
+		if (target_ws && view->workspace != target_ws) {
+			view_move_to_workspace(view, target_ws);
+		}
+	}
 	if (view->scene_tree) {
 		view_update_visibility(view);
 	}

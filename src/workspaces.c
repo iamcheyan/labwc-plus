@@ -5,13 +5,16 @@
 #include <cairo.h>
 #include <pango/pangocairo.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/inotify.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <wayland-server-core.h>
 #include <wlr/types/wlr_ext_workspace_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
@@ -31,35 +34,58 @@
 
 #define EXT_WORKSPACES_VERSION 1
 
+/*
+ * Local Quickshell bridge (not for upstream):
+ *
+ *   $XDG_RUNTIME_DIR/labwc/workspace-<output>
+ *     labwc writes: "<index> <count> <name>\n"
+ *     index is 1-based in server.workspaces.all
+ *
+ *   $XDG_RUNTIME_DIR/labwc/workspace-<output>.goto
+ *     Quickshell writes: "<index-or-name>\n"
+ *     labwc switches only that output, then unlinks the request
+ */
+static int indicator_inotify_fd = -1;
+static struct wl_event_source *indicator_inotify_source;
+
+static size_t workspace_index(struct workspace *target);
+
+static bool
+indicator_state_dir(char *state_dir, size_t state_dir_size)
+{
+	const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
+	if (!runtime_dir || !*runtime_dir) {
+		return false;
+	}
+	if (snprintf(state_dir, state_dir_size, "%s/labwc", runtime_dir)
+		>= (int)state_dir_size) {
+		return false;
+	}
+	if (mkdir(state_dir, 0700) < 0 && errno != EEXIST) {
+		return false;
+	}
+	return true;
+}
+
 static void
 write_workspace_indicator_state(struct output *output)
 {
-	/*
-	 * This is a deliberately small local integration bridge for the
-	 * Quickshell workspace indicator. It is kept separate from the core
-	 * workspace model so an upstream contribution can omit it cleanly.
-	 */
 	if (!output || !output->wlr_output || !output->current_workspace) {
 		return;
 	}
 
-	const char *runtime_dir = getenv("XDG_RUNTIME_DIR");
-	if (!runtime_dir || !*runtime_dir) {
-		return;
-	}
-
 	char state_dir[PATH_MAX];
-	if (snprintf(state_dir, sizeof(state_dir), "%s/labwc", runtime_dir)
-		>= (int)sizeof(state_dir)) {
-		return;
-	}
-	if (mkdir(state_dir, 0700) < 0 && errno != EEXIST) {
+	if (!indicator_state_dir(state_dir, sizeof(state_dir))) {
 		return;
 	}
 
 	char state_path[PATH_MAX];
 	char temp_path[PATH_MAX];
 	const char *output_name = output->wlr_output->name;
+	size_t index = workspace_index(output->current_workspace);
+	if (!index || !output_name) {
+		return;
+	}
 	if (snprintf(state_path, sizeof(state_path), "%s/workspace-%s",
 		state_dir, output_name) >= (int)sizeof(state_path) ||
 		snprintf(temp_path, sizeof(temp_path), "%s.tmp.%ld", state_path,
@@ -71,10 +97,192 @@ write_workspace_indicator_state(struct output *output)
 	if (!file) {
 		return;
 	}
-	fprintf(file, "%s %zu\n", output->current_workspace->name,
-		(size_t)wl_list_length(&server.workspaces.all));
+	fprintf(file, "%zu %zu %s\n", index,
+		(size_t)wl_list_length(&server.workspaces.all),
+		output->current_workspace->name);
 	fclose(file);
 	rename(temp_path, state_path);
+}
+
+static void
+handle_workspace_goto_request(const char *filename)
+{
+	static const char prefix[] = "workspace-";
+	static const char suffix[] = ".goto";
+	size_t name_len;
+	size_t out_len;
+	char output_name[128];
+	char state_dir[PATH_MAX];
+	char request_path[PATH_MAX];
+	char to[128];
+	FILE *file;
+	struct output *output;
+	struct workspace *target;
+	char *end;
+
+	if (!filename) {
+		return;
+	}
+	name_len = strlen(filename);
+	if (name_len <= sizeof(prefix) - 1 + sizeof(suffix) - 1) {
+		return;
+	}
+	if (strncmp(filename, prefix, sizeof(prefix) - 1) != 0) {
+		return;
+	}
+	if (strcmp(filename + name_len - (sizeof(suffix) - 1), suffix) != 0) {
+		return;
+	}
+
+	out_len = name_len - (sizeof(prefix) - 1) - (sizeof(suffix) - 1);
+	if (out_len == 0 || out_len >= sizeof(output_name)) {
+		return;
+	}
+	memcpy(output_name, filename + sizeof(prefix) - 1, out_len);
+	output_name[out_len] = '\0';
+
+	if (!indicator_state_dir(state_dir, sizeof(state_dir))) {
+		return;
+	}
+	if (snprintf(request_path, sizeof(request_path), "%s/%s",
+		state_dir, filename) >= (int)sizeof(request_path)) {
+		return;
+	}
+
+	file = fopen(request_path, "r");
+	if (!file) {
+		return;
+	}
+	if (!fgets(to, sizeof(to), file)) {
+		fclose(file);
+		unlink(request_path);
+		return;
+	}
+	fclose(file);
+	unlink(request_path);
+
+	end = to + strlen(to);
+	while (end > to && (end[-1] == '\n' || end[-1] == '\r'
+			|| end[-1] == ' ' || end[-1] == '\t')) {
+		*--end = '\0';
+	}
+	if (to[0] == '\0') {
+		return;
+	}
+
+	output = output_from_name(output_name);
+	if (!output_is_usable(output)) {
+		wlr_log(WLR_INFO,
+			"workspace goto ignored; unknown output '%s'",
+			output_name);
+		return;
+	}
+
+	target = workspaces_find(workspaces_current_for_output(output), to,
+		/* wrap */ true);
+	if (!target) {
+		return;
+	}
+	workspaces_switch_to_on_output(output, target, /* update_focus */ true);
+}
+
+static int
+handle_indicator_inotify(int fd, uint32_t mask, void *data)
+{
+	char buf[4096]
+		__attribute__((aligned(__alignof__(struct inotify_event))));
+
+	(void)mask;
+	(void)data;
+
+	for (;;) {
+		ssize_t len = read(fd, buf, sizeof(buf));
+		if (len < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK
+					|| errno == EINTR) {
+				break;
+			}
+			wlr_log(WLR_ERROR,
+				"workspace indicator inotify read failed");
+			break;
+		}
+		if (len == 0) {
+			break;
+		}
+
+		char *ptr = buf;
+		while (ptr + sizeof(struct inotify_event) <= buf + len) {
+			const struct inotify_event *event = (const void *)ptr;
+			size_t event_size = sizeof(struct inotify_event)
+				+ event->len;
+			if (ptr + event_size > buf + len) {
+				break;
+			}
+			if ((event->mask & (IN_MOVED_TO | IN_CLOSE_WRITE))
+					&& event->len > 0) {
+				handle_workspace_goto_request(event->name);
+			}
+			ptr += event_size;
+		}
+	}
+	return 0;
+}
+
+static void
+indicator_bridge_init(void)
+{
+	char state_dir[PATH_MAX];
+	int watch_fd;
+
+	if (indicator_inotify_fd >= 0) {
+		return;
+	}
+	if (!indicator_state_dir(state_dir, sizeof(state_dir))) {
+		return;
+	}
+
+	watch_fd = inotify_init();
+	if (watch_fd < 0) {
+		wlr_log(WLR_ERROR,
+			"failed to init workspace indicator inotify");
+		return;
+	}
+	if (fcntl(watch_fd, F_SETFD, FD_CLOEXEC) < 0
+			|| fcntl(watch_fd, F_SETFL, O_NONBLOCK) < 0) {
+		wlr_log(WLR_ERROR,
+			"failed to configure workspace indicator inotify");
+		close(watch_fd);
+		return;
+	}
+	if (inotify_add_watch(watch_fd, state_dir,
+			IN_MOVED_TO | IN_CLOSE_WRITE) < 0) {
+		wlr_log(WLR_ERROR,
+			"failed to watch %s for workspace goto requests",
+			state_dir);
+		close(watch_fd);
+		return;
+	}
+
+	indicator_inotify_source = wl_event_loop_add_fd(server.wl_event_loop,
+		watch_fd, WL_EVENT_READABLE, handle_indicator_inotify, NULL);
+	if (!indicator_inotify_source) {
+		close(watch_fd);
+		return;
+	}
+	indicator_inotify_fd = watch_fd;
+}
+
+static void
+indicator_bridge_finish(void)
+{
+	if (indicator_inotify_source) {
+		wl_event_source_remove(indicator_inotify_source);
+		indicator_inotify_source = NULL;
+	}
+	if (indicator_inotify_fd >= 0) {
+		close(indicator_inotify_fd);
+		indicator_inotify_fd = -1;
+	}
 }
 
 /* Internal helpers */
@@ -110,8 +318,26 @@ parse_workspace_index(const char *name)
 	return index;
 }
 
+static size_t
+workspace_index(struct workspace *target)
+{
+	size_t index = 0;
+	struct workspace *workspace;
+
+	if (!target) {
+		return 0;
+	}
+	wl_list_for_each(workspace, &server.workspaces.all, link) {
+		++index;
+		if (workspace == target) {
+			return index;
+		}
+	}
+	return 0;
+}
+
 static void
-_osd_update(void)
+_osd_update(struct output *target)
 {
 	struct theme *theme = rc.theme;
 
@@ -132,11 +358,10 @@ _osd_update(void)
 	cairo_t *cairo;
 	cairo_surface_t *surface;
 	struct workspace *workspace;
-	struct output *active_output = workspaces_get_active_output();
 
 	struct output *output;
 	wl_list_for_each(output, &server.outputs, link) {
-		if (!output_is_usable(output) || output != active_output) {
+		if (!output_is_usable(output) || output != target) {
 			continue;
 		}
 		struct workspace *current = workspaces_current_for_output(output);
@@ -412,20 +637,20 @@ _osd_handle_timeout(void *data)
 }
 
 static void
-_osd_show(void)
+_osd_show(struct output *target)
 {
-	if (!rc.workspace_config.popuptime) {
+	if (!rc.workspace_config.popuptime || !target) {
 		return;
 	}
 
-	_osd_update();
-	struct output *active_output = workspaces_get_active_output();
+	_osd_update(target);
 	struct output *output;
 	wl_list_for_each(output, &server.outputs, link) {
-		if (output_is_usable(output) && output == active_output &&
-				output->workspace_osd) {
-			wlr_scene_node_set_enabled(&output->workspace_osd->node, true);
+		if (!output->workspace_osd) {
+			continue;
 		}
+		wlr_scene_node_set_enabled(&output->workspace_osd->node,
+			output_is_usable(output) && output == target);
 	}
 	if (keyboard_get_all_modifiers(&server.seat)) {
 		/* Hidden by release of all modifiers */
@@ -480,6 +705,7 @@ workspaces_init(void)
 
 	server.workspaces.current = initial;
 	wlr_ext_workspace_handle_v1_set_active(initial->ext_workspace, true);
+	indicator_bridge_init();
 }
 
 void
@@ -494,11 +720,16 @@ workspaces_output_init(struct output *output)
 struct output *
 workspaces_get_active_output(void)
 {
-	/* Keyboard focus wins; cursor position is only the no-window fallback. */
+	/* Cursor position defines which display the user is interacting with.
+	 * Fall back to the focused view's output if cursor output is not usable. */
+	struct output *cursor_output = output_nearest_to_cursor();
+	if (cursor_output && output_is_usable(cursor_output)) {
+		return cursor_output;
+	}
 	if (server.active_view && output_is_usable(server.active_view->output)) {
 		return server.active_view->output;
 	}
-	return output_nearest_to_cursor();
+	return cursor_output;
 }
 
 struct workspace *
@@ -579,19 +810,25 @@ workspaces_switch_to_on_output(struct output *output,
 	if (update_focus) {
 		struct view *active_view = server.active_view;
 		if (!(active_view && active_view->visible_on_all_workspaces)) {
-			struct view *focus_view;
-			for_each_view(focus_view, &server.views,
+			struct view *focus_view = NULL;
+			struct view *v;
+			for_each_view(v, &server.views,
 				LAB_VIEW_CRITERIA_CURRENT_WORKSPACE) {
-				if (focus_view->output == output) {
-					desktop_focus_view(focus_view, /*raise*/ true);
+				if (v->output == output && !v->minimized) {
+					focus_view = v;
 					break;
 				}
+			}
+			if (focus_view) {
+				desktop_focus_view(focus_view, /*raise*/ true);
+			} else if (server.active_view && server.active_view->output == output) {
+				seat_focus_surface(&server.seat, NULL);
 			}
 		}
 	}
 
-	/* And finally show the OSD */
-	_osd_show();
+	/* And finally show the OSD on the output that actually switched */
+	_osd_show(output);
 
 	/*
 	 * Make sure we are not carrying around a
@@ -802,6 +1039,7 @@ void
 workspaces_destroy(void)
 {
 	struct workspace *workspace, *tmp;
+	indicator_bridge_finish();
 	wl_list_for_each_safe(workspace, tmp, &server.workspaces.all, link) {
 		destroy_workspace(workspace);
 	}

@@ -14,6 +14,12 @@
 
 - `e223620d`：核心的按输出工作区与任务切换器行为，适合作为上游 PR 的候选基础。
 - `c2859a7f`：向 `$XDG_RUNTIME_DIR/labwc/workspace-<output>` 写状态，供本地 Quickshell 指示器读取；这是本地集成，不应混入核心上游 PR。
+
+本地 Quickshell 桥接协议：
+
+- 状态文件 `$XDG_RUNTIME_DIR/labwc/workspace-<output>` 由 labwc 写入一行：
+  `<index> <count> <name>`。`index` 是该输出当前工作区在 `server.workspaces.all` 中的 1 起始序号。旧格式 `<name> <count>` 仍可被指示器解析。
+- 请求文件 `$XDG_RUNTIME_DIR/labwc/workspace-<output>.goto` 由 bar 点击写入一行工作区序号或名称。labwc 只切换该输出，然后删除请求文件。不要用全局 `wtype Super+N`：那会作用到键盘焦点所在显示器，而不是被点击的那条 bar。
 - `28daae8f`：本设计文档本身。
 
 上面的提交号是当前本地历史中的提交，后续若重排提交历史应以变更内容为准。
