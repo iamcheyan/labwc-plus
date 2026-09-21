@@ -23,14 +23,19 @@ struct workspace {
 };
 
 void workspaces_init(void);
+/* Switch on the output selected by the current focus/cursor context. */
 void workspaces_switch_to(struct workspace *target, bool update_focus);
 void workspaces_switch_to_without_osd(struct workspace *target, bool update_focus);
+/* Switch only the specified output; used when the target view is elsewhere. */
 void workspaces_switch_to_on_output(struct output *output,
 	struct workspace *target, bool update_focus);
+/* Initialize output-local state after an output becomes usable. */
 void workspaces_output_init(struct output *output);
+/* Resolve the output and workspace used by keyboard-driven actions. */
 struct output *workspaces_get_active_output(void);
 struct workspace *workspaces_current(void);
 struct workspace *workspaces_current_for_output(struct output *output);
+/* Shared workspace trees stay enabled; visibility is output-local. */
 bool workspaces_view_is_visible(struct view *view);
 void workspaces_destroy(void);
 void workspaces_osd_hide(struct seat *seat);

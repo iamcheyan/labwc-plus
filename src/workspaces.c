@@ -34,6 +34,11 @@
 static void
 write_workspace_indicator_state(struct output *output)
 {
+	/*
+	 * This is a deliberately small local integration bridge for the
+	 * Quickshell workspace indicator. It is kept separate from the core
+	 * workspace model so an upstream contribution can omit it cleanly.
+	 */
 	if (!output || !output->wlr_output || !output->current_workspace) {
 		return;
 	}
@@ -489,6 +494,7 @@ workspaces_output_init(struct output *output)
 struct output *
 workspaces_get_active_output(void)
 {
+	/* Keyboard focus wins; cursor position is only the no-window fallback. */
 	if (server.active_view && output_is_usable(server.active_view->output)) {
 		return server.active_view->output;
 	}
@@ -546,7 +552,11 @@ workspaces_switch_to_on_output(struct output *output,
 	output->last_workspace = current;
 	output->current_workspace = target;
 	write_workspace_indicator_state(output);
-	/* Keep the legacy global pointers aligned with the focused output. */
+	/*
+	 * Keep the legacy global pointers aligned with the focused output for
+	 * code and protocol paths that still expect the upstream global state.
+	 * They are not used to decide view visibility anymore.
+	 */
 	server.workspaces.last = current;
 	server.workspaces.current = target;
 
