@@ -1152,7 +1152,7 @@ run_action(struct view *view, struct action *action,
 			.workspace = action_get_int(action, "workspace",
 				rc.window_switcher.workspace_filter),
 			.output = action_get_int(action, "output",
-				CYCLE_OUTPUT_ALL),
+				CYCLE_OUTPUT_FOCUSED),
 			.app_id = action_get_int(action, "identifier",
 				CYCLE_APP_ID_ALL),
 		};
@@ -1171,7 +1171,7 @@ run_action(struct view *view, struct action *action,
 			.workspace = action_get_int(action, "workspace",
 				rc.window_switcher.workspace_filter),
 			.output = action_get_int(action, "output",
-				CYCLE_OUTPUT_ALL),
+				CYCLE_OUTPUT_FOCUSED),
 			.app_id = action_get_int(action, "identifier",
 				CYCLE_APP_ID_ALL),
 		};
@@ -1369,12 +1369,13 @@ run_action(struct view *view, struct action *action,
 		 * a required argument for both SendToDesktop and GoToDesktop.
 		 */
 		struct workspace *target_workspace = workspaces_find(
-			server.workspaces.current, to, wrap);
+			workspaces_current(), to, wrap);
 		if (action->type == ACTION_TYPE_GO_TO_DESKTOP) {
 			bool toggle = action_get_bool(action, "toggle", false);
-			if (target_workspace == server.workspaces.current
+			if (target_workspace == workspaces_current()
 				&& toggle) {
-				target_workspace = server.workspaces.last;
+				target_workspace = workspaces_find(
+					workspaces_current(), "last", wrap);
 			}
 		}
 		if (!target_workspace) {

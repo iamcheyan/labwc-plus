@@ -37,6 +37,7 @@
 #include "regions.h"
 #include "session-lock.h"
 #include "view.h"
+#include "workspaces.h"
 #include "xwayland.h"
 
 #if WLR_HAS_X11_BACKEND
@@ -697,6 +698,7 @@ handle_new_output(struct wl_listener *listener, void *data)
 	output->wlr_output = wlr_output;
 	wlr_output->data = output;
 	output->id_bit = id_bit;
+	workspaces_output_init(output);
 	output_state_init(output);
 
 	wl_list_insert(&server.outputs, &output->link);

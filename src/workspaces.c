@@ -82,12 +82,14 @@ _osd_update(void)
 	cairo_t *cairo;
 	cairo_surface_t *surface;
 	struct workspace *workspace;
+	struct output *active_output = workspaces_get_active_output();
 
 	struct output *output;
 	wl_list_for_each(output, &server.outputs, link) {
-		if (!output_is_usable(output)) {
+		if (!output_is_usable(output) || output != active_output) {
 			continue;
 		}
+		struct workspace *current = workspaces_current_for_output(output);
 		struct lab_data_buffer *buffer = buffer_create_cairo(width, height,
 			output->wlr_output->scale);
 		if (!buffer) {
@@ -115,7 +117,7 @@ _osd_update(void)
 		if (!hide_boxes) {
 			x = (width - marker_width) / 2;
 			wl_list_for_each(workspace, &server.workspaces.all, link) {
-				bool active = workspace == server.workspaces.current;
+				bool active = workspace == current;
 				set_cairo_color(cairo, rc.theme->osd_label_text_color);
 				struct wlr_fbox fbox = {
 					.x = x,
@@ -141,7 +143,7 @@ _osd_update(void)
 		pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
 
 		/* Center workspace indicator on the x axis */
-		int req_width = font_width(&rc.font_osd, server.workspaces.current->name);
+		int req_width = font_width(&rc.font_osd, current->name);
 		req_width = MIN(req_width, width - 2 * margin);
 		x = (width - req_width) / 2;
 		if (!hide_boxes) {
@@ -154,7 +156,7 @@ _osd_update(void)
 		pango_layout_set_font_description(layout, desc);
 		pango_layout_set_width(layout, req_width * PANGO_SCALE);
 		pango_font_description_free(desc);
-		pango_layout_set_text(layout, server.workspaces.current->name, -1);
+		pango_layout_set_text(layout, current->name, -1);
 		pango_cairo_show_layout(cairo, layout);
 
 		g_object_unref(layout);
@@ -238,7 +240,8 @@ add_workspace(const char *name)
 	workspace->view_trees[VIEW_LAYER_ALWAYS_ON_TOP] =
 		lab_wlr_scene_tree_create(workspace->tree);
 	wl_list_append(&server.workspaces.all, &workspace->link);
-	wlr_scene_node_set_enabled(&workspace->tree->node, false);
+	/* Visibility is controlled per view/output, not by this shared tree. */
+	wlr_scene_node_set_enabled(&workspace->tree->node, true);
 
 	workspace->ext_workspace = wlr_ext_workspace_handle_v1_create(
 		server.workspaces.ext_manager, /*id*/ NULL,
@@ -280,12 +283,12 @@ get_next(struct workspace *current, struct wl_list *workspaces, bool wrap)
 }
 
 static bool
-workspace_has_views(struct workspace *workspace)
+workspace_has_views(struct workspace *workspace, struct output *output)
 {
 	struct view *view;
 
 	for_each_view(view, &server.views, LAB_VIEW_CRITERIA_NO_OMNIPRESENT) {
-		if (view->workspace == workspace) {
+		if (view->workspace == workspace && view->output == output) {
 			return true;
 		}
 	}
@@ -294,7 +297,7 @@ workspace_has_views(struct workspace *workspace)
 
 static struct workspace *
 get_adjacent_occupied(struct workspace *current, struct wl_list *workspaces,
-		bool wrap, bool reverse)
+		struct output *output, bool wrap, bool reverse)
 {
 	struct wl_list *start = &current->link;
 	struct wl_list *link = reverse ? start->prev : start->next;
@@ -324,7 +327,7 @@ get_adjacent_occupied(struct workspace *current, struct wl_list *workspaces,
 		}
 
 		/* Check if it's occupied (and not current) */
-		if (target != current && workspace_has_views(target)) {
+		if (target != current && workspace_has_views(target, output)) {
 			return target;
 		}
 
@@ -336,15 +339,17 @@ get_adjacent_occupied(struct workspace *current, struct wl_list *workspaces,
 }
 
 static struct workspace *
-get_prev_occupied(struct workspace *current, struct wl_list *workspaces, bool wrap)
+get_prev_occupied(struct workspace *current, struct wl_list *workspaces,
+		struct output *output, bool wrap)
 {
-	return get_adjacent_occupied(current, workspaces, wrap, true);
+	return get_adjacent_occupied(current, workspaces, output, wrap, true);
 }
 
 static struct workspace *
-get_next_occupied(struct workspace *current, struct wl_list *workspaces, bool wrap)
+get_next_occupied(struct workspace *current, struct wl_list *workspaces,
+		struct output *output, bool wrap)
 {
-	return get_adjacent_occupied(current, workspaces, wrap, false);
+	return get_adjacent_occupied(current, workspaces, output, wrap, false);
 }
 
 static int
@@ -364,9 +369,11 @@ _osd_show(void)
 	}
 
 	_osd_update();
+	struct output *active_output = workspaces_get_active_output();
 	struct output *output;
 	wl_list_for_each(output, &server.outputs, link) {
-		if (output_is_usable(output) && output->workspace_osd) {
+		if (output_is_usable(output) && output == active_output &&
+				output->workspace_osd) {
 			wlr_scene_node_set_enabled(&output->workspace_osd->node, true);
 		}
 	}
@@ -422,8 +429,47 @@ workspaces_init(void)
 	}
 
 	server.workspaces.current = initial;
-	wlr_scene_node_set_enabled(&initial->tree->node, true);
 	wlr_ext_workspace_handle_v1_set_active(initial->ext_workspace, true);
+}
+
+void
+workspaces_output_init(struct output *output)
+{
+	assert(output);
+	output->current_workspace = server.workspaces.current;
+	output->last_workspace = output->current_workspace;
+}
+
+struct output *
+workspaces_get_active_output(void)
+{
+	if (server.active_view && output_is_usable(server.active_view->output)) {
+		return server.active_view->output;
+	}
+	return output_nearest_to_cursor();
+}
+
+struct workspace *
+workspaces_current_for_output(struct output *output)
+{
+	if (output && output->current_workspace) {
+		return output->current_workspace;
+	}
+	return server.workspaces.current;
+}
+
+struct workspace *
+workspaces_current(void)
+{
+	return workspaces_current_for_output(workspaces_get_active_output());
+}
+
+bool
+workspaces_view_is_visible(struct view *view)
+{
+	assert(view);
+	return view->visible_on_all_workspaces ||
+		view->workspace == workspaces_current_for_output(view->output);
 }
 
 /*
@@ -434,42 +480,39 @@ workspaces_init(void)
 void
 workspaces_switch_to(struct workspace *target, bool update_focus)
 {
+	workspaces_switch_to_on_output(workspaces_get_active_output(), target,
+		update_focus);
+}
+
+void
+workspaces_switch_to_on_output(struct output *output,
+	struct workspace *target, bool update_focus)
+{
 	assert(target);
-	if (target == server.workspaces.current) {
+	if (!output) {
+		return;
+	}
+	struct workspace *current = workspaces_current_for_output(output);
+	if (target == current) {
 		return;
 	}
 
-	/* Disable the old workspace */
-	wlr_scene_node_set_enabled(
-		&server.workspaces.current->tree->node, false);
-
-	wlr_ext_workspace_handle_v1_set_active(
-		server.workspaces.current->ext_workspace, false);
-
-	/*
-	 * Move Omnipresent views to new workspace.
-	 * Not using for_each_view() since it skips views that
-	 * view_is_focusable() returns false (e.g. Conky).
-	 */
-	struct view *view;
-	wl_list_for_each_reverse(view, &server.views, link) {
-		if (view->visible_on_all_workspaces) {
-			view_move_to_workspace(view, target);
-		}
-	}
-
-	/* Enable the new workspace */
-	wlr_scene_node_set_enabled(&target->tree->node, true);
-
-	/* Save the last visited workspace */
-	server.workspaces.last = server.workspaces.current;
-
-	/* Make sure new views will spawn on the new workspace */
+	output->last_workspace = current;
+	output->current_workspace = target;
+	/* Keep the legacy global pointers aligned with the focused output. */
+	server.workspaces.last = current;
 	server.workspaces.current = target;
 
 	struct view *grabbed_view = server.grabbed_view;
-	if (grabbed_view) {
+	if (grabbed_view && grabbed_view->output == output) {
 		view_move_to_workspace(grabbed_view, target);
+	}
+
+	struct view *view;
+	wl_list_for_each(view, &server.views, link) {
+		if (view->output == output && view->scene_tree) {
+			view_update_visibility(view);
+		}
 	}
 
 	/*
@@ -479,7 +522,14 @@ workspaces_switch_to(struct workspace *target, bool update_focus)
 	if (update_focus) {
 		struct view *active_view = server.active_view;
 		if (!(active_view && active_view->visible_on_all_workspaces)) {
-			desktop_focus_topmost_view();
+			struct view *focus_view;
+			for_each_view(focus_view, &server.views,
+				LAB_VIEW_CRITERIA_CURRENT_WORKSPACE) {
+				if (focus_view->output == output) {
+					desktop_focus_view(focus_view, /*raise*/ true);
+					break;
+				}
+			}
 		}
 	}
 
@@ -583,15 +633,19 @@ workspaces_find(struct workspace *anchor, const char *name, bool wrap)
 	if (!strcasecmp(name, "current")) {
 		return anchor;
 	} else if (!strcasecmp(name, "last")) {
-		return server.workspaces.last;
+		struct output *output = workspaces_get_active_output();
+		return output && output->last_workspace ?
+			output->last_workspace : server.workspaces.last;
 	} else if (!strcasecmp(name, "left")) {
 		return get_prev(anchor, workspaces, wrap);
 	} else if (!strcasecmp(name, "right")) {
 		return get_next(anchor, workspaces, wrap);
 	} else if (!strcasecmp(name, "left-occupied")) {
-		return get_prev_occupied(anchor, workspaces, wrap);
+		return get_prev_occupied(anchor, workspaces,
+			workspaces_get_active_output(), wrap);
 	} else if (!strcasecmp(name, "right-occupied")) {
-		return get_next_occupied(anchor, workspaces, wrap);
+		return get_next_occupied(anchor, workspaces,
+			workspaces_get_active_output(), wrap);
 	}
 	return workspace_find_by_name(name);
 }
@@ -665,9 +719,18 @@ workspaces_reconfigure(void)
 			}
 		}
 
+		struct output *output;
+		wl_list_for_each(output, &server.outputs, link) {
+			if (output->current_workspace == workspace) {
+				workspaces_switch_to_on_output(output, first_workspace,
+					/* update_focus */ output == workspaces_get_active_output());
+			}
+			if (output->last_workspace == workspace) {
+				output->last_workspace = first_workspace;
+			}
+		}
 		if (server.workspaces.current == workspace) {
-			workspaces_switch_to(first_workspace,
-				/* update_focus */ true);
+			server.workspaces.current = first_workspace;
 		}
 		if (server.workspaces.last == workspace) {
 			server.workspaces.last = first_workspace;

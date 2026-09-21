@@ -8,6 +8,8 @@
 
 struct seat;
 struct server;
+struct output;
+struct view;
 struct wlr_scene_tree;
 
 struct workspace {
@@ -23,6 +25,13 @@ struct workspace {
 void workspaces_init(void);
 void workspaces_switch_to(struct workspace *target, bool update_focus);
 void workspaces_switch_to_without_osd(struct workspace *target, bool update_focus);
+void workspaces_switch_to_on_output(struct output *output,
+	struct workspace *target, bool update_focus);
+void workspaces_output_init(struct output *output);
+struct output *workspaces_get_active_output(void);
+struct workspace *workspaces_current(void);
+struct workspace *workspaces_current_for_output(struct output *output);
+bool workspaces_view_is_visible(struct view *view);
 void workspaces_destroy(void);
 void workspaces_osd_hide(struct seat *seat);
 struct workspace *workspaces_find(struct workspace *anchor, const char *name,

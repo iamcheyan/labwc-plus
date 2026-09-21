@@ -1690,7 +1690,7 @@ rcxml_init(void)
 
 	rc.window_switcher.osd.show = true;
 	rc.window_switcher.osd.style = CYCLE_OSD_STYLE_CLASSIC;
-	rc.window_switcher.osd.output_filter = CYCLE_OUTPUT_ALL;
+	rc.window_switcher.osd.output_filter = CYCLE_OUTPUT_FOCUSED;
 	rc.window_switcher.osd.thumbnail_label_format = xstrdup("%T");
 	rc.window_switcher.preview = true;
 	rc.window_switcher.outlines = true;

@@ -5,6 +5,8 @@
 #include <wlr/types/wlr_output.h>
 #include "common/edge.h"
 
+struct workspace;
+
 #define LAB_NR_LAYERS (4)
 
 struct output {
@@ -38,6 +40,10 @@ struct output {
 	 * disconnected and connected again.
 	 */
 	uint64_t id_bit;
+
+	/* Workspace state is independent for each output. */
+	struct workspace *current_workspace;
+	struct workspace *last_workspace;
 };
 
 #undef LAB_NR_LAYERS

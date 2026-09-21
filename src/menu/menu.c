@@ -912,7 +912,7 @@ update_client_send_to_menu(void)
 	 */
 	struct buf buf = BUF_INIT;
 	wl_list_for_each(workspace, &server.workspaces.all, link) {
-		if (workspace == server.workspaces.current) {
+		if (workspace == workspaces_current()) {
 			buf_add_fmt(&buf, ">%s<", workspace->name);
 		} else {
 			buf_add(&buf, workspace->name);
@@ -957,7 +957,7 @@ update_client_list_combined_menu(void)
 	struct buf buffer = BUF_INIT;
 
 	wl_list_for_each(workspace, &server.workspaces.all, link) {
-		buf_add_fmt(&buffer, workspace == server.workspaces.current ? ">%s<" : "%s",
+		buf_add_fmt(&buffer, workspace == workspaces_current() ? ">%s<" : "%s",
 				workspace->name);
 		separator_create(menu, buffer.data);
 		buf_clear(&buffer);

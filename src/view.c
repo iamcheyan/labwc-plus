@@ -204,7 +204,7 @@ view_matches_query(struct view *view, struct view_query *query)
 
 	if (query->desktop) {
 		const char *view_workspace = view->workspace->name;
-		struct workspace *current = server.workspaces.current;
+		struct workspace *current = workspaces_current_for_output(view->output);
 
 		if (!strcasecmp(query->desktop, "other")) {
 			/* "other" means the view is NOT on the current desktop */
@@ -270,7 +270,7 @@ view_matches_criteria(struct view *view, enum lab_view_criteria criteria)
 		return false;
 	}
 	if (criteria & LAB_VIEW_CRITERIA_CURRENT_WORKSPACE) {
-		if (view->workspace != server.workspaces.current) {
+		if (!workspaces_view_is_visible(view)) {
 			return false;
 		}
 	}
@@ -492,6 +492,9 @@ view_set_output(struct view *view, struct output *output)
 		return;
 	}
 	view->output = output;
+	if (view->scene_tree) {
+		view_update_visibility(view);
+	}
 	/* Show fullscreen views above top-layer */
 	if (view->fullscreen) {
 		desktop_update_top_layer_visibility();
@@ -1592,6 +1595,7 @@ view_move_to_workspace(struct view *view, struct workspace *workspace)
 		view->workspace = workspace;
 		wlr_scene_node_reparent(&view->scene_tree->node,
 			workspace->view_trees[view->layer]);
+		view_update_visibility(view);
 	}
 }
 
@@ -2374,7 +2378,8 @@ mappable_disconnect(struct mappable *mappable)
 void
 view_update_visibility(struct view *view)
 {
-	bool visible = view->mapped && !view->minimized;
+	bool visible = view->mapped && !view->minimized &&
+		workspaces_view_is_visible(view);
 	if (visible == view->scene_tree->node.enabled) {
 		return;
 	}
