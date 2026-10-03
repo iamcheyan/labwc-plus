@@ -8,7 +8,7 @@ This directory contains documentation maintained by the labwc-plus project.
 - [`development/downstream-maintenance-models.md`](development/downstream-maintenance-models.md)
   compares the current labwc-plus patch-queue workflow with SwayFX's
   version-oriented upstream integration workflow.
-- [`../../LABWC-PLUS.md`](../../LABWC-PLUS.md) is the user-facing feature and
-  configuration guide.
+- [`../../LABWC-PLUS.md`](../../LABWC-PLUS.md) describes current downstream
+  behavior and maintenance.
 
 Upstream labwc documentation remains in the rest of the `docs/` directory.

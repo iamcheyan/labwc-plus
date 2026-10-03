@@ -138,8 +138,6 @@ struct rcxml {
 	/* mouse */
 	long doubleclick_time;     /* in ms */
 	struct wl_list mousebinds; /* struct mousebind.link */
-	bool win_scroll_workspace;
-	uint32_t win_scroll_workspace_modifier;
 
 	/* touch tablet */
 	struct wl_list touch_configs;
@@ -217,16 +215,6 @@ struct rcxml {
 	/* Menu */
 	unsigned int menu_ignore_button_release_period;
 	bool menu_show_icons;
-
-	/* Hot Corner */
-	struct {
-		bool enabled;
-		int delay_ms;
-		struct {
-			bool enabled;
-			struct wl_list actions; /* struct action.link */
-		} corners[4]; /* 0=TL, 1=TR, 2=BL, 3=BR */
-	} hot_corner;
 
 	/* Magnifier */
 	int mag_width;

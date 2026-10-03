@@ -25,7 +25,6 @@
 #include "common/xml.h"
 #include "config/default-bindings.h"
 #include "config/keybind.h"
-#include <wlr/types/wlr_keyboard.h>
 #include "config/libinput.h"
 #include "config/mousebind.h"
 #include "config/tablet.h"
@@ -221,11 +220,6 @@ static void
 fill_title_layout(const char *content)
 {
 	clear_title_layout();
-
-	for (int i = 0; i < 4; i++) {
-		action_list_free(&rc.hot_corner.corners[i].actions);
-	}
-
 
 	gchar **parts = g_strsplit(content, ":", -1);
 
@@ -586,40 +580,6 @@ append_parsed_actions(xmlNode *node, struct wl_list *list)
 		struct action *action = parse_action(child);
 		if (action) {
 			wl_list_append(list, &action->link);
-		}
-	}
-}
-
-
-/* corner indices */
-enum { HC_TL = 0, HC_TR = 1, HC_BL = 2, HC_BR = 3 };
-
-static void
-fill_hot_corner(xmlNode *node)
-{
-	xmlNode *child;
-	char *key, *content;
-	LAB_XML_FOR_EACH(node, child, key, content) {
-		if (!strcasecmp(key, "enabled")) {
-			set_bool(content, &rc.hot_corner.enabled);
-		} else if (!strcasecmp(key, "delay")) {
-			rc.hot_corner.delay_ms = atoi(content);
-		} else if (!strcasecmp(key, "topLeft")) {
-			rc.hot_corner.corners[HC_TL].enabled = true;
-			append_parsed_actions(child,
-				&rc.hot_corner.corners[HC_TL].actions);
-		} else if (!strcasecmp(key, "topRight")) {
-			rc.hot_corner.corners[HC_TR].enabled = true;
-			append_parsed_actions(child,
-				&rc.hot_corner.corners[HC_TR].actions);
-		} else if (!strcasecmp(key, "bottomLeft")) {
-			rc.hot_corner.corners[HC_BL].enabled = true;
-			append_parsed_actions(child,
-				&rc.hot_corner.corners[HC_BL].actions);
-		} else if (!strcasecmp(key, "bottomRight")) {
-			rc.hot_corner.corners[HC_BR].enabled = true;
-			append_parsed_actions(child,
-				&rc.hot_corner.corners[HC_BR].actions);
 		}
 	}
 }
@@ -1185,8 +1145,6 @@ entry(xmlNode *node, char *nodename, char *content)
 		fill_usable_area_override(node);
 	} else if (!strcasecmp(nodename, "keybind.keyboard")) {
 		fill_keybind(node);
-	} else if (!strcasecmp(nodename, "hotCorner")) {
-		fill_hot_corner(node);
 	} else if (!strcasecmp(nodename, "context.mouse")) {
 		fill_mouse_context(node);
 	} else if (!strcasecmp(nodename, "touch")) {
@@ -1303,19 +1261,6 @@ entry(xmlNode *node, char *nodename, char *content)
 			rc.doubleclick_time = doubleclick_time_parsed;
 		} else {
 			wlr_log(WLR_ERROR, "invalid doubleClickTime");
-		}
-	} else if (!strcasecmp(nodename, "winScrollWorkspace.mouse")) {
-		set_bool(content, &rc.win_scroll_workspace);
-	} else if (!strcasecmp(nodename, "winScrollWorkspaceModifier.mouse")) {
-		if (!strcasecmp(content, "none")) {
-			rc.win_scroll_workspace_modifier = 0;
-		} else {
-			uint32_t mod = parse_modifier(content);
-			if (mod != 0) {
-				rc.win_scroll_workspace_modifier = mod;
-			} else {
-				wlr_log(WLR_ERROR, "invalid winScrollWorkspaceModifier: %s", content);
-			}
 		}
 	} else if (!strcasecmp(nodename, "scrollFactor.mouse")) {
 		/* This is deprecated. Show an error message in post_processing() */
@@ -1656,8 +1601,6 @@ rcxml_init(void)
 	rc.raise_on_focus_delay_ms = 0;
 
 	rc.doubleclick_time = 500;
-	rc.win_scroll_workspace = true;
-	rc.win_scroll_workspace_modifier = WLR_MODIFIER_LOGO;
 
 	rc.tablet.force_mouse_emulation = false;
 	rc.tablet.output_name = NULL;
@@ -1702,12 +1645,6 @@ rcxml_init(void)
 	rc.resize_draw_contents = true;
 	rc.resize_corner_range = -1;
 	rc.resize_minimum_area = 8;
-
-	rc.hot_corner.enabled = false;
-	rc.hot_corner.delay_ms = 300;
-	for (int i = 0; i < 4; i++) {
-		wl_list_init(&rc.hot_corner.corners[i].actions);
-	}
 
 	rc.workspace_config.popuptime = INT_MIN;
 	rc.workspace_config.min_nr_workspaces = 1;
@@ -2035,18 +1972,6 @@ validate_actions(void)
 {
 	struct action *action, *action_tmp;
 
-	for (int i = 0; i < 4; i++) {
-		wl_list_for_each_safe(action, action_tmp,
-				&rc.hot_corner.corners[i].actions, link) {
-			if (!action_is_valid(action)) {
-				wl_list_remove(&action->link);
-				action_free(action);
-				wlr_log(WLR_ERROR,
-					"Removed invalid hot corner[%d] action", i);
-			}
-		}
-	}
-
 	struct keybind *keybind;
 	wl_list_for_each(keybind, &rc.keybinds, link) {
 		wl_list_for_each_safe(action, action_tmp, &keybind->actions, link) {
@@ -2199,11 +2124,6 @@ rcxml_finish(void)
 	zfree(rc.window_switcher.osd.thumbnail_label_format);
 
 	clear_title_layout();
-
-	for (int i = 0; i < 4; i++) {
-		action_list_free(&rc.hot_corner.corners[i].actions);
-	}
-
 
 	struct usable_area_override *area, *area_tmp;
 	wl_list_for_each_safe(area, area_tmp, &rc.usable_area_overrides, link) {

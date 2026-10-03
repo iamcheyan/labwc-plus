@@ -31,10 +31,7 @@
 #include "labwc.h"
 #include "layers.h"
 #include "menu/menu.h"
-#include "overview.h"
 #include "output.h"
-#include "workspaces.h"
-#include <wlr/types/wlr_keyboard.h>
 #include "resistance.h"
 #include "resize-outlines.h"
 #include "ssd.h"
@@ -626,120 +623,15 @@ cursor_get_resize_edges(struct wlr_cursor *cursor, const struct cursor_context *
 	return resize_edges;
 }
 
-
-/* ── hot corner ────────────────────────────────────────── */
-
-static int
-hot_corner_timer_cb(void *data)
-{
-	struct seat *seat = data;
-	seat->hot_corner.timer = NULL;
-
-	if (!rc.hot_corner.enabled || seat->hot_corner.triggered) {
-		return 0;
-	}
-	if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH) {
-		return 0;
-	}
-
-	seat->hot_corner.triggered = true;
-
-	int corner = seat->hot_corner.corner;
-	struct wl_list *actions = &rc.hot_corner.corners[corner].actions;
-	if (!wl_list_empty(actions)) {
-		actions_run(NULL, actions, NULL);
-	}
-	return 0;
-}
-
-static void
-hot_corner_update(struct seat *seat)
-{
-	if (!rc.hot_corner.enabled) {
-		return;
-	}
-	if (server.input_mode != LAB_INPUT_STATE_PASSTHROUGH) {
-		return;
-	}
-
-	struct output *output = output_nearest_to_cursor();
-	if (!output || !output_is_usable(output)) {
-		return;
-	}
-
-	struct wlr_box output_box;
-	wlr_output_layout_get_box(server.output_layout,
-		output->wlr_output, &output_box);
-
-	double cx = seat->cursor->x;
-	double cy = seat->cursor->y;
-
-	/* check enabled corners (2x2 pixels) */
-	int hit = -1;
-	if (rc.hot_corner.corners[0].enabled
-			&& cx >= output_box.x && cx < output_box.x + 2
-			&& cy >= output_box.y && cy < output_box.y + 2) {
-		hit = 0;
-	} else if (rc.hot_corner.corners[1].enabled
-			&& cx >= output_box.x + output_box.width - 2
-			&& cx < output_box.x + output_box.width
-			&& cy >= output_box.y && cy < output_box.y + 2) {
-		hit = 1;
-	} else if (rc.hot_corner.corners[2].enabled
-			&& cx >= output_box.x && cx < output_box.x + 2
-			&& cy >= output_box.y + output_box.height - 2
-			&& cy < output_box.y + output_box.height) {
-		hit = 2;
-	} else if (rc.hot_corner.corners[3].enabled
-			&& cx >= output_box.x + output_box.width - 2
-			&& cx < output_box.x + output_box.width
-			&& cy >= output_box.y + output_box.height - 2
-			&& cy < output_box.y + output_box.height) {
-		hit = 3;
-	}
-
-	bool in_corner = (hit >= 0);
-
-	if (in_corner) {
-		if (!seat->hot_corner.armed) {
-			/* just entered the corner */
-			seat->hot_corner.armed = true;
-			seat->hot_corner.triggered = false;
-			seat->hot_corner.corner = hit;
-		}
-		if (!seat->hot_corner.triggered && !seat->hot_corner.timer) {
-			seat->hot_corner.timer = wl_event_loop_add_timer(
-				server.wl_event_loop,
-				hot_corner_timer_cb, seat);
-			wl_event_source_timer_update(seat->hot_corner.timer,
-				rc.hot_corner.delay_ms);
-		}
-	} else {
-		/* left the corner — cancel */
-		seat->hot_corner.armed = false;
-		seat->hot_corner.triggered = false;
-		if (seat->hot_corner.timer) {
-			wl_event_source_remove(seat->hot_corner.timer);
-			seat->hot_corner.timer = NULL;
-		}
-	}
-}
-
 bool
 cursor_process_motion(uint32_t time, double *sx, double *sy)
 {
-	hot_corner_update(&server.seat);
-
 	/* If the mode is non-passthrough, delegate to those functions. */
 	if (server.input_mode == LAB_INPUT_STATE_MOVE) {
 		process_cursor_move(time);
 		return false;
 	} else if (server.input_mode == LAB_INPUT_STATE_RESIZE) {
 		process_cursor_resize(time);
-		return false;
-	} else if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
-		overview_on_cursor_motion(server.seat.cursor->x,
-			server.seat.cursor->y);
 		return false;
 	}
 
@@ -1271,12 +1163,6 @@ cursor_process_button_press(struct seat *seat, uint32_t button, uint32_t time_ms
 		return false;
 	}
 
-	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
-		overview_on_cursor_press(&ctx);
-		lab_set_add(&seat->bound_buttons, button);
-		return false;
-	}
-
 	/*
 	 * On press, set focus to a non-view surface that wants it.
 	 * Action processing does not run for these surfaces and thus
@@ -1384,10 +1270,6 @@ cursor_finish_button_release(struct seat *seat, uint32_t button)
 
 	lab_set_remove(&seat->bound_buttons, button);
 
-	if (server.input_mode == LAB_INPUT_STATE_OVERVIEW) {
-		wlr_seat_pointer_clear_focus(seat->wlr_seat);
-	}
-
 	if (server.input_mode == LAB_INPUT_STATE_MOVE
 			|| server.input_mode == LAB_INPUT_STATE_RESIZE) {
 		if (resize_outlines_enabled(server.grabbed_view)) {
@@ -1487,55 +1369,6 @@ compare_delta(double delta, double delta_discrete, struct accumulated_scroll *ac
 	return info;
 }
 
-/*
- * Cycle mode: scroll wheel cycles through windows using the
- * WindowSwitcher mousebind context. Returns true if consumed.
- */
-static bool
-process_cycle_axis(enum wl_pointer_axis orientation,
-		double delta, double delta_discrete)
-{
-	struct cursor_context ctx = {
-		.type = LAB_NODE_WINDOW_SWITCHER,
-	};
-	uint32_t modifiers = keyboard_get_all_modifiers(&server.seat);
-
-	enum direction direction = LAB_DIRECTION_INVALID;
-	struct scroll_info info = compare_delta(delta, delta_discrete,
-		&server.seat.accumulated_scrolls[orientation]);
-
-	if (orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
-		if (info.direction < 0) {
-			direction = LAB_DIRECTION_LEFT;
-		} else if (info.direction > 0) {
-			direction = LAB_DIRECTION_RIGHT;
-		}
-	} else if (orientation == WL_POINTER_AXIS_VERTICAL_SCROLL) {
-		if (info.direction < 0) {
-			direction = LAB_DIRECTION_UP;
-		} else if (info.direction > 0) {
-			direction = LAB_DIRECTION_DOWN;
-		}
-	}
-
-	bool consumed = false;
-	if (direction != LAB_DIRECTION_INVALID) {
-		struct mousebind *mousebind;
-		wl_list_for_each(mousebind, &rc.mousebinds, link) {
-			if (node_type_contains(mousebind->context, ctx.type)
-					&& mousebind->direction == direction
-					&& modifiers == mousebind->modifiers
-					&& mousebind->mouse_event == MOUSE_ACTION_SCROLL) {
-				consumed = true;
-				if (info.run_action) {
-					actions_run(ctx.view, &mousebind->actions, &ctx);
-				}
-			}
-		}
-	}
-	return consumed;
-}
-
 static bool
 process_cursor_axis(enum wl_pointer_axis orientation,
 		double delta, double delta_discrete)
@@ -1546,29 +1379,6 @@ process_cursor_axis(enum wl_pointer_axis orientation,
 	enum direction direction = LAB_DIRECTION_INVALID;
 	struct scroll_info info = compare_delta(delta, delta_discrete,
 		&server.seat.accumulated_scrolls[orientation]);
-
-
-	if (rc.win_scroll_workspace && (modifiers == rc.win_scroll_workspace_modifier)) {
-		if (info.direction < 0) {
-			if (info.run_action) {
-				struct workspace *target = workspaces_find(
-					server.workspaces.current, "left", true);
-				if (target) {
-					workspaces_switch_to_without_osd(target, true);
-				}
-			}
-			return true;
-		} else if (info.direction > 0) {
-			if (info.run_action) {
-				struct workspace *target = workspaces_find(
-					server.workspaces.current, "right", true);
-				if (target) {
-					workspaces_switch_to_without_osd(target, true);
-				}
-			}
-			return true;
-		}
-	}
 
 	if (orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL) {
 		if (info.direction < 0) {
@@ -1634,13 +1444,6 @@ handle_axis(struct wl_listener *listener, void *data)
 	struct wlr_pointer_axis_event *event = data;
 	idle_manager_notify_activity(seat->wlr_seat);
 	cursor_set_visible(seat, /* visible */ true);
-
-	/* Cycle mode: scroll wheel cycles through windows */
-	if (server.input_mode == LAB_INPUT_STATE_CYCLE) {
-		process_cycle_axis(event->orientation,
-			event->delta, event->delta_discrete);
-		return;
-	}
 
 	/* input->scroll_factor is set for pointer/touch devices */
 	assert(event->pointer->base.type == WLR_INPUT_DEVICE_POINTER

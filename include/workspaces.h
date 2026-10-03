@@ -25,7 +25,6 @@ struct workspace {
 void workspaces_init(void);
 /* Switch on the output selected by the current focus/cursor context. */
 void workspaces_switch_to(struct workspace *target, bool update_focus);
-void workspaces_switch_to_without_osd(struct workspace *target, bool update_focus);
 /* Switch only the specified output; used when the target view is elsewhere. */
 void workspaces_switch_to_on_output(struct output *output,
 	struct workspace *target, bool update_focus);
